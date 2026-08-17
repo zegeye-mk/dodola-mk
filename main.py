@@ -379,10 +379,10 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
 
     job_queue = app.job_queue
-    job_queue.run_daily(wednesday_exec_job, time=datetime.time(hour=20, minute=55, second=0), days=(2,))
-    job_queue.run_daily(sunday_exec_job, time=datetime.time(hour=7, minute=35, second=0), days=(6,))
-    job_queue.run_daily(friday_all_job, time=datetime.time(hour=17, minute=25, second=0), days=(4,))
-    job_queue.run_monthly(monthly_payment_reminder_job, time=datetime.time(hour=9, minute=0, second=0), day=1)
+    job_queue.run_daily(wednesday_exec_job, when=datetime.time(hour=20, minute=55, second=0), days=(2,))
+    job_queue.run_daily(sunday_exec_job, when=datetime.time(hour=7, minute=35, second=0), days=(6,))
+    job_queue.run_daily(friday_all_job, when=datetime.time(hour=17, minute=25, second=0), days=(4,))
+    job_queue.run_monthly(monthly_payment_reminder_job, when=datetime.time(hour=9, minute=0, second=0), day=1)
 
     app.run_polling()
 
