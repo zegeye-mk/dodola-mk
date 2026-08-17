@@ -1,25 +1,39 @@
 import datetime
 import logging
+import os
 import sqlite3
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from threading import Thread
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
-    CommandHandler,
     CallbackQueryHandler,
+    CommandHandler,
     ContextTypes,
 )
 
 logging.basicConfig(level=logging.INFO)
 
+# --- RENDER HEALTH CHECK SERVER ---
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is alive!")
+
+def run_health_check_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    server.serve_forever()
+
 # --- CONFIGURATION ---
 BOT_TOKEN = "8129704477:AAEoX1nI0QmpiHfK0VXrinG-yWyMn9OZVLM"
-ADMIN_ID = 829583750  # የእርስዎ Telegram ID ተሞልቷል
+ADMIN_ID = 829583750
 
 # --- DATABASE SETUP ---
 def init_db():
     conn = sqlite3.connect("association.db")
     cursor = conn.cursor()
-    # Users table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -27,7 +41,6 @@ def init_db():
             is_executive INTEGER DEFAULT 0
         )
     ''')
-    # Attendance table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS attendance (
             user_id INTEGER,
@@ -36,7 +49,6 @@ def init_db():
             PRIMARY KEY (user_id, date)
         )
     ''')
-    # Payments table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS payments (
             user_id INTEGER,
@@ -46,7 +58,6 @@ def init_db():
             PRIMARY KEY (user_id, month_year, payment_type)
         )
     ''')
-    # Settings table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -100,7 +111,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/broadcast <መልእክት> - ለሁሉም አባላት ማስታወቂያ ለመላክ"
     )
 
-# --- MEETING LINK MANAGEMENT ---
 async def set_link_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -150,7 +160,6 @@ async def make_exec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("እባክዎን ትክክለኛ የUser ID ያስገቡ። ምሳሌ፡ /make_exec 123456789")
 
-# --- ATTENDANCE MANAGEMENT ---
 async def attendance_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -206,7 +215,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if status == "ABSENT":
             await check_consecutive_absences(user_id, context)
 
-# --- CONSECUTIVE ABSENCE CHECK ---
 async def check_consecutive_absences(user_id: int, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db()
     cursor = conn.cursor()
@@ -226,7 +234,6 @@ async def check_consecutive_absences(user_id: int, context: ContextTypes.DEFAULT
         except Exception:
             pass
 
-# --- PAYMENTS MANAGEMENT ---
 async def pay_monthly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -290,8 +297,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
     await update.message.reply_text(f"መልእክቱ ለ {count} አባላት ተልኳል።")
 
-# --- SCHEDULED AUTOMATED JOBS ---
-# 1. እሮብ ማታ 2:55 - የስራ አስፈፃሚ ስብሰባ ማሳሰቢያ
+# --- SCHEDULED JOBS ---
 async def wednesday_exec_job(context: ContextTypes.DEFAULT_TYPE):
     link = get_meeting_link()
     keyboard = [[InlineKeyboardButton("🔗 ወደ ስብሰባው ግባ (Join)", url=link)]]
@@ -310,7 +316,6 @@ async def wednesday_exec_job(context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-# 2. እሁድ ጠዋት 1:35 - የስራ አስፈፃሚ የአካል ስብሰባ ማሳሰቢያ
 async def sunday_exec_job(context: ContextTypes.DEFAULT_TYPE):
     conn = get_db()
     cursor = conn.cursor()
@@ -325,7 +330,6 @@ async def sunday_exec_job(context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-# 3. አርብ ከቀኑ 11:25 - የሁሉም አባላት ስብሰባ ማሳሰቢያ (በሊንክ)
 async def friday_all_job(context: ContextTypes.DEFAULT_TYPE):
     link = get_meeting_link()
     keyboard = [[InlineKeyboardButton("🔗 ወደ ስብሰባው ግባ (Join)", url=link)]]
@@ -344,7 +348,6 @@ async def friday_all_job(context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-# 4. የወርሃዊ እና የማህበራዊ ክፍያ ማሳሰቢያ (በየወሩ 1ኛ ቀን)
 async def monthly_payment_reminder_job(context: ContextTypes.DEFAULT_TYPE):
     conn = get_db()
     cursor = conn.cursor()
@@ -360,6 +363,9 @@ async def monthly_payment_reminder_job(context: ContextTypes.DEFAULT_TYPE):
             pass
 
 def main():
+    # Render የጤንነት ፍተሻ (Health Check) ሰርቨርን ከበስተጀርባ ማስጀመር
+    Thread(target=run_health_check_server, daemon=True).start()
+
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -372,19 +378,10 @@ def main():
     app.add_handler(CommandHandler("broadcast", broadcast))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    # --- SCHEDULER TIMINGS ---
     job_queue = app.job_queue
-
-    # እሮብ ማታ 2:55 (20:55)
     job_queue.run_daily(wednesday_exec_job, time=datetime.time(hour=20, minute=55, second=0), days=(2,))
-
-    # እሁድ ጠዋት 1:35 (07:35)
     job_queue.run_daily(sunday_exec_job, time=datetime.time(hour=7, minute=35, second=0), days=(6,))
-
-    # አርብ ከቀኑ 11:25 (17:25)
     job_queue.run_daily(friday_all_job, time=datetime.time(hour=17, minute=25, second=0), days=(4,))
-
-    # በየወሩ 1ኛ ቀን ጠዋት 3:00 ሰዓት ክፍያ ማሳሰቢያ
     job_queue.run_monthly(monthly_payment_reminder_job, time=datetime.time(hour=9, minute=0, second=0), day=1)
 
     app.run_polling()
