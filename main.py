@@ -27,7 +27,7 @@ def run_health_check_server():
     server.serve_forever()
 
 # --- CONFIGURATION ---
-BOT_TOKEN = "8129704477:AAEoX1nI0QmpiHfK0FZrinG-yWyMn9OZVLM"
+BOT_TOKEN = os.getenv("8129704477:AAEoX1nI0QmpiHfK0FZrinG-yWyMn9OZVLM")
 ADMIN_ID = 829583750
 
 # --- DATABASE SETUP ---
